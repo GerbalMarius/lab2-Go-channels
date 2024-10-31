@@ -8,6 +8,7 @@ import (
 )
 
 const FILE_NAME string = "cats.json"
+const WORKERS int = 3
 
 func main() {
 	cats := jsonreader.ReadCatsFromJson(FILE_NAME)
