@@ -2,7 +2,6 @@ package jsonreader
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"marius.org/cat"
@@ -13,7 +12,7 @@ func ReadCatsFromJson(fileName string) []*cat.Cat {
 
 	bytes, readErr := os.ReadFile(fileName)
 	if readErr != nil {
-		fmt.Println("ERROR reading file:", fileName, readErr)
+		panic(readErr)
 	}
 
 	json.Unmarshal(bytes, &cats)
