@@ -20,9 +20,12 @@ func NewCat(name string, age int, weight float64) *Cat {
 func (c *Cat) UpdateHash(newHash string) {
 	c.hash = newHash
 }
+func (c *Cat) Hash() string {
+	return c.hash
+}
 
 func (c *Cat) String() string {
-	return fmt.Sprintf("|%6d|%-15s|%6.2f|%s|", c.Age, c.Name, c.Weight, c.hash)
+	return fmt.Sprintf("|%6d|%-15s|%6.2f|%-64s|", c.Age, c.Name, c.Weight, c.hash)
 }
 
 func (c *Cat) Serialize() string {

@@ -9,69 +9,86 @@ import (
 	"marius.org/requests"
 )
 
-func ProcessData(dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest, workerDone chan<- struct{}) {
-	req := requests.DataRequest{Action: "remove", Response: make(chan *cat.Cat)}
-	dataChannel <- req
-	cat := <-req.Response
+func ProcessData(itemsCount *int, dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest, workerDone chan<- struct{}) {
+	for {
+		req := requests.DataRequest{Action: "remove", Response: make(chan *cat.Cat)}
+		dataChannel <- req
+		cat := <-req.Response
+		*itemsCount = *itemsCount + 1
+		if *itemsCount >= 25 {
+			workerDone <- struct{}{}
+			return
+		}
 
-	if cat != nil {
-		if cat.Weight >= 5 {
+		// Process the cat if it meets the weight condition
+		if cat != nil && cat.Weight > 6 {
 			hash := hasher.HashSha256(cat)
 			cat.UpdateHash(hash)
 			resReq := requests.ResultRequest{Cat: cat, Request: make(chan bool)}
 			resultChannel <- resReq
-			<-resReq.Request //send request for results
+			<-resReq.Request // Wait for confirmation of result processing
 		}
+
 	}
-	workerDone <- struct{}{} //send that worker is done
 }
 
-func ProcessDataThread(dataChannel <-chan requests.DataRequest, done <-chan struct{}) {
-	capacity := 10
-	cats := make([]*cat.Cat, 0, capacity)
+func ProcessDataThread(adderChan <-chan requests.DataRequest, removerChan <-chan requests.DataRequest, done <-chan struct{}) {
+	cats := make([]*cat.Cat, 0, 10)
+
 	for {
 		select {
-		case req := <-dataChannel:
-			if req.Action == "add" && len(cats) < capacity {
+		case req := <-adderChan:
+			// Add cat to slice if not full
+			if len(cats) < cap(cats) {
 				cats = append(cats, req.Cat)
 				req.Response <- nil
-			}
-			if req.Action == "remove" && len(cats) > 0 {
-				req.Response <- cats[len(cats)-1] //removing the last element of the array
-				cats = cats[:len(cats)-1]
-			} else {
-				req.Response <- nil // array is empty
 
+			} else {
+				req.Response <- nil
 			}
+
+		case req := <-removerChan:
+			// Remove cat from slice and return it
+			if len(cats) > 0 {
+				req.Response <- cats[len(cats)-1]
+				cats = cats[:len(cats)-1]
+
+			} else {
+				req.Response <- nil
+			}
+
 		case <-done:
+			// Terminate when done channel is closed
 			return
+
 		}
 	}
+
 }
 func sortedInsert(cats []*cat.Cat, item *cat.Cat) []*cat.Cat {
 	if len(cats) == 0 {
 		return append(cats, item)
 	}
+
 	idx, _ := slices.BinarySearchFunc(cats, item, func(a, b *cat.Cat) int {
 		return strings.Compare(a.Name, b.Name)
 	})
+
 	cats = append(cats[:idx], append([]*cat.Cat{item}, cats[idx:]...)...)
 	return cats
 
 }
-func ProcessResultThread(resultChannel <-chan requests.ResultRequest, done <-chan struct{}, mainChan chan<- *cat.Cat) {
+func ProcessResultThread(resultChannel chan requests.ResultRequest, done <-chan struct{}, mainChan chan []*cat.Cat) {
 	results := make([]*cat.Cat, 0, 30)
-	idx := 0
 
 	for {
 		select {
 		case req := <-resultChannel:
 			results = sortedInsert(results, req.Cat)
-			req.Request <- true
-			mainChan <- results[idx]
-			idx++
+			req.Request <- true // received results
 
 		case <-done:
+			mainChan <- results
 			return
 		}
 
