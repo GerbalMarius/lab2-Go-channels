@@ -1,6 +1,9 @@
 package actions
 
 import (
+	"slices"
+	"strings"
+
 	"marius.org/cat"
 	"marius.org/hasher"
 	"marius.org/requests"
@@ -45,6 +48,32 @@ func ProcessDataThread(dataChannel <-chan requests.DataRequest, done <-chan stru
 		}
 	}
 }
-func ProcessResultThread(resultChannel <-chan requests.ResultRequest, done chan struct{}) {
-	
+func sortedInsert(cats []*cat.Cat, item *cat.Cat) []*cat.Cat {
+	if len(cats) == 0 {
+		return append(cats, item)
+	}
+	idx, _ := slices.BinarySearchFunc(cats, item, func(a, b *cat.Cat) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	cats = append(cats[:idx], append([]*cat.Cat{item}, cats[idx:]...)...)
+	return cats
+
+}
+func ProcessResultThread(resultChannel <-chan requests.ResultRequest, done <-chan struct{}, mainChan chan<- *cat.Cat) {
+	results := make([]*cat.Cat, 0, 30)
+	idx := 0
+
+	for {
+		select {
+		case req := <-resultChannel:
+			results = sortedInsert(results, req.Cat)
+			req.Request <- true
+			mainChan <- results[idx]
+			idx++
+
+		case <-done:
+			return
+		}
+
+	}
 }
