@@ -24,6 +24,9 @@ func ReadCatsFromJson(fileName string) []*cat.Cat {
 }
 
 func PrintCatsTable(fileName string, cats []*cat.Cat) {
+	if len(cats) == 0 {
+		return
+	}
 
 	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -33,7 +36,7 @@ func PrintCatsTable(fileName string, cats []*cat.Cat) {
 	defer file.Close()
 	dashes := strings.Repeat("-", utf8.RuneCountInString(cats[0].String()))
 
-	header := fmt.Sprintf("|%-6s|%-15s|%-6s|%-64s|", "Amžius", "Vardas", "Svoris", "Hash")
+	header := fmt.Sprintf("|%-6s|%-15s|%-6s|%-64s|", "Amžius", "Vardas", "Svoris", "Maišos funkcija")
 	file.WriteString(dashes + "\n")
 	file.WriteString(header + "\n")
 	file.WriteString(dashes + "\n")

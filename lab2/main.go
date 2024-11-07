@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"marius.org/actions"
@@ -21,37 +20,36 @@ func main() {
 	}
 
 	cats := ioops.ReadCatsFromJson(FILE_NAME)
-	catsToProcess := 0
-	fmt.Println("Before:", catsToProcess)
+	var catSize int = len(cats)
 	ioops.PrintCatsTable(RESULTS, cats)
 
-	adderChan := make(chan requests.DataRequest)
-	removerChan := make(chan requests.DataRequest)
-	resultChan := make(chan requests.ResultRequest)
-	done := make(chan struct{}) //channel for done requests
+	adderChan := make(chan requests.DataRequest)    // channel for add operations
+	removerChan := make(chan requests.DataRequest)  // channel for remove operations
+	resultChan := make(chan requests.ResultRequest) // channel for processed items
+	done := make(chan struct{})                     //channel for done requests
 
-	workerDone := make(chan struct{}) // channel for worker finishes
+	workerDone := make(chan struct{}) // channel for worker thread finishes
 
-	finalResults := make(chan []*cat.Cat) //channel for processed results
+	finalResults := make(chan []*cat.Cat)   //channel for processed results
+	finishedRemoving := make(chan struct{}) // signal for finished removals
 
-	go actions.ProcessDataThread(adderChan, removerChan, done)
+	go actions.ProcessDataThread(catSize, adderChan, removerChan, finishedRemoving, done)
 	go actions.ProcessResultThread(resultChan, done, finalResults)
 
 	for i := 0; i < WORKERS; i++ {
-		go actions.ProcessData(&catsToProcess, removerChan, resultChan, workerDone)
+		go actions.ProcessData(removerChan, resultChan, workerDone, finishedRemoving)
 	}
 	for _, c := range cats {
-		req := requests.DataRequest{Action: "add", Cat: c, Response: make(chan *cat.Cat)}
+		req := requests.DataRequest{Cat: c, Response: make(chan *cat.Cat)}
 		adderChan <- req
 		<-req.Response
-
 	}
 
 	for i := 0; i < WORKERS; i++ {
 		<-workerDone
 	}
+
 	close(done)
-	fmt.Println("After:", catsToProcess)
 	results := <-finalResults
 	ioops.PrintCatsTable(RESULTS, results)
 

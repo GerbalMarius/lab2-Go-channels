@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -9,31 +10,35 @@ import (
 	"marius.org/requests"
 )
 
-func ProcessData(itemsCount *int, dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest, workerDone chan<- struct{}) {
+func ProcessData(dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest,
+	workerDone chan<- struct{}, finishedRemoving <-chan struct{}) {
 	for {
-		req := requests.DataRequest{Action: "remove", Response: make(chan *cat.Cat)}
-		dataChannel <- req
-		cat := <-req.Response
-		*itemsCount = *itemsCount + 1
-		if *itemsCount >= 25 {
+		select {
+		case <-finishedRemoving:
 			workerDone <- struct{}{}
 			return
-		}
+		default:
+			req := requests.DataRequest{Response: make(chan *cat.Cat)}
+			dataChannel <- req
+			cat := <-req.Response
 
-		// Process the cat if it meets the weight condition
-		if cat != nil && cat.Weight > 6 {
-			hash := hasher.HashSha256(cat)
-			cat.UpdateHash(hash)
-			resReq := requests.ResultRequest{Cat: cat, Request: make(chan bool)}
-			resultChannel <- resReq
-			<-resReq.Request // Wait for confirmation of result processing
+			// Process the cat if it meets the weight condition
+			if cat != nil && cat.Weight > 6 {
+				hash := hasher.HashSha256(cat)
+				cat.UpdateHash(hash)
+				resReq := requests.ResultRequest{Cat: cat, Request: make(chan bool)}
+				resultChannel <- resReq
+				<-resReq.Request // Wait for confirmation of result processing
+			}
 		}
 
 	}
 }
 
-func ProcessDataThread(adderChan <-chan requests.DataRequest, removerChan <-chan requests.DataRequest, done <-chan struct{}) {
+func ProcessDataThread(elementsToProcess int, adderChan <-chan requests.DataRequest, removerChan <-chan requests.DataRequest,
+	finishedRemoving chan struct{}, done chan struct{}) {
 	cats := make([]*cat.Cat, 0, 10)
+	removed := 0
 
 	for {
 		select {
@@ -51,14 +56,17 @@ func ProcessDataThread(adderChan <-chan requests.DataRequest, removerChan <-chan
 			// Remove cat from slice and return it
 			if len(cats) > 0 {
 				req.Response <- cats[len(cats)-1]
+				removed++
+				fmt.Println("Removed element:", cats[len(cats)-1], "Current removals:", removed)
 				cats = cats[:len(cats)-1]
+				if removed == elementsToProcess {
+					close(finishedRemoving)
+				}
 
 			} else {
 				req.Response <- nil
 			}
-
 		case <-done:
-			// Terminate when done channel is closed
 			return
 
 		}
