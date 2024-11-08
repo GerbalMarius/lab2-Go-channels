@@ -10,25 +10,30 @@ import (
 	"marius.org/requests"
 )
 
-func ProcessData(dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest,
-	workerDone chan<- struct{}, finishedRemoving <-chan struct{}) {
+func ProcessData(adderChan chan requests.DataRequest, dataChannel chan<- requests.DataRequest, resultChannel chan<- requests.ResultRequest,
+	finishedRemoving <-chan struct{}, sizeChan chan int) {
 	for {
-		select {
-		case <-finishedRemoving:
-			workerDone <- struct{}{}
-			return
-		default:
-			req := requests.DataRequest{Response: make(chan *cat.Cat)}
-			dataChannel <- req
-			cat := <-req.Response
+		currSize := <-sizeChan
+		if currentSize <= 0 {
+			<-adderChan
+			continue
+		} else {
+			select {
+			case <-finishedRemoving:
+				return
+			default:
+				req := requests.DataRequest{Response: make(chan *cat.Cat)}
+				dataChannel <- req
+				cat := <-req.Response
 
-			// Process the cat if it meets the weight condition
-			if cat != nil && cat.Weight > 6 {
-				hash := hasher.HashSha256(cat)
-				cat.UpdateHash(hash)
-				resReq := requests.ResultRequest{Cat: cat, Request: make(chan bool)}
-				resultChannel <- resReq
-				<-resReq.Request // Wait for confirmation of result processing
+				// Process the cat if it meets the weight condition
+				if cat != nil && cat.Weight > 6 {
+					hash := hasher.HashSha256(cat)
+					cat.UpdateHash(hash)
+					resReq := requests.ResultRequest{Cat: cat, Request: make(chan bool)}
+					resultChannel <- resReq
+					<-resReq.Request // Wait for confirmation of result processing
+				}
 			}
 		}
 
@@ -36,20 +41,18 @@ func ProcessData(dataChannel chan<- requests.DataRequest, resultChannel chan<- r
 }
 
 func ProcessDataThread(elementsToProcess int, adderChan <-chan requests.DataRequest, removerChan <-chan requests.DataRequest,
-	finishedRemoving chan struct{}, done chan struct{}) {
+	finishedRemoving chan struct{}, done chan struct{}, sizeChan chan int) {
 	cats := make([]*cat.Cat, 0, 10)
 	removed := 0
 
 	for {
+		sizeChan <- len(cats)
 		select {
 		case req := <-adderChan:
 			// Add cat to slice if not full
 			if len(cats) < cap(cats) {
 				cats = append(cats, req.Cat)
-				req.Response <- nil
 
-			} else {
-				req.Response <- nil
 			}
 
 		case req := <-removerChan:

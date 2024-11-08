@@ -27,26 +27,20 @@ func main() {
 	removerChan := make(chan requests.DataRequest)  // channel for remove operations
 	resultChan := make(chan requests.ResultRequest) // channel for processed items
 	done := make(chan struct{})                     //channel for done requests
-
-	workerDone := make(chan struct{}) // channel for worker thread finishes
+	sizeChan := make(chan int)
 
 	finalResults := make(chan []*cat.Cat)   //channel for processed results
 	finishedRemoving := make(chan struct{}) // signal for finished removals
 
-	go actions.ProcessDataThread(catSize, adderChan, removerChan, finishedRemoving, done)
+	go actions.ProcessDataThread(catSize, adderChan, removerChan, finishedRemoving, done, sizeChan)
 	go actions.ProcessResultThread(resultChan, done, finalResults)
 
 	for i := 0; i < WORKERS; i++ {
-		go actions.ProcessData(removerChan, resultChan, workerDone, finishedRemoving)
+		go actions.ProcessData(adderChan, removerChan, resultChan, finishedRemoving, sizeChan)
 	}
 	for _, c := range cats {
 		req := requests.DataRequest{Cat: c, Response: make(chan *cat.Cat)}
 		adderChan <- req
-		<-req.Response
-	}
-
-	for i := 0; i < WORKERS; i++ {
-		<-workerDone
 	}
 
 	close(done)
